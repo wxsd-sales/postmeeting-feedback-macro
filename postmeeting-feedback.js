@@ -26,7 +26,7 @@ import xapi from 'xapi';
 
 const config = {
   name: 'Report Issue',     // Name of the Button and Panel
-  serviceUrl: 'https://webhook.site/07b132eb-0517-4681-b810-1a389753f8ac',
+  serviceUrl: '<YOUR BACKEND SERVER URL>',
   allowInsecureHTTPs: true, // Allow insecure HTTPS connections to the instant connect broker for testing
   showNotifications: false, // Show sending, sent and errorSending Alerts and error alerts
   minimumCallDurationSeconds: 5,
