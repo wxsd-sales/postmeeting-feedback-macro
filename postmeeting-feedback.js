@@ -25,33 +25,33 @@ import xapi from 'xapi';
 **********************************************************/
 
 const config = {
-  name: 'Report Issue',     // Name of the Button and Panel
-  serviceUrl: '<YOUR BACKEND SERVER URL>',
+  serviceUrl: 'https://<Your Backend Server>',
+  token: '<Your Servers Bearer Token>',
   allowInsecureHTTPs: true, // Allow insecure HTTPS connections to the instant connect broker for testing
   showNotifications: false, // Show sending, sent and errorSending Alerts and error alerts
   minimumCallDurationSeconds: 5,
   feedback: [
-    {
+    { // Getting Meeting Rating
       id: 'meetingRating',
       type: 'rating',
       options: {
-        Duration: 30,
+        Duration: 10,
         Text: 'How was your meeting experience?',
         Title: 'Meeting Feedback'
       },
       nextAction: 'officeRating'
     },
-    {
+    { // Getting Meeting Rating
       id: 'officeRating',
       type: 'rating',
       options: {
-        Duration: 30,
+        Duration: 10,
         Text: 'How was your overall office experience today?',
         Title: 'Office Feedback'
       },
       nextAction: 'userFeedback'
     },
-    {
+    { // Getting User Feedback if triggers have been met
       id: 'userFeedback',
       type: 'text',
       triggers: [
@@ -66,6 +66,11 @@ const config = {
         Title: 'Please share more'
       },
       nextAction: 'send'
+    },
+    { // Sending step and conditions 
+      id: 'send',
+      type: 'send',
+      required: ['meetingRating']
     }
   ],
   notifications: {          // Customise the text of the 3 possible alerts
@@ -127,6 +132,7 @@ function main() {
     .then(result => { identification.contactInfoName = result })
     .catch(e => console.log('Could not get Contact Info Name: ' + e.message))
 
+  // Monitor Call Disconnects
   xapi.Event.CallDisconnect.on(value => {
     console.log('Call Disconnected', JSON.stringify(value))
     inputs = {};
@@ -135,26 +141,39 @@ function main() {
 
   });
 
+  // Process Rating Reponses
   xapi.Event.UserInterface.Message.Rating.Response.on(async event => {
     if (!event.FeedbackId.startsWith(config.panelId)) return;
     await xapi.Command.UserInterface.Message.Rating.Clear();
     const id = event.FeedbackId.split('-').pop();
-    console.log(`Rating Reponse of [${event.Rating}] for [${id}]`)
+    console.log(`Received Rating Reponse [${event.Rating}] for [${id}]`)
     inputs[id] = parseInt(event.Rating);
     proccesAction(id);
   })
 
-  xapi.Event.UserInterface.Message.Rating.Cleared
-    .on(value => console.log('Rating Cleared', JSON.stringify(value)));
+  // Process Rating Cleared
+  xapi.Event.UserInterface.Message.Rating.Cleared.on(event => {
+    console.log('Rating Cleared', JSON.stringify(event))
+    if (!event.FeedbackId.startsWith(config.panelId)) return;
+    const id = event.FeedbackId.split('-').pop();
+    console.log(`Rating Cleared [${id}]`)
+    proccesAction(id);
+  });
 
-    xapi.Event.UserInterface.Message.Rating.Display
-    .on(value => console.log('Rating Display', JSON.stringify(value)));
-
+  // Process TextInput Reponses
   xapi.Event.UserInterface.Message.TextInput.Response.on(event => {
     if (!event.FeedbackId.startsWith(config.panelId)) return;
     const id = event.FeedbackId.split('-').pop();
     console.log(`Text Input Reponse of [${event.Text}] for [${id}]`)
     inputs[id] = event.Text;
+    proccesAction(id);
+  });
+
+  // Process TextInput Cleared
+  xapi.Event.UserInterface.Message.TextInput.Cleared.on(event => {
+    if (!event.FeedbackId.startsWith(config.panelId)) return;
+    const id = event.FeedbackId.split('-').pop();
+    console.log(`Text Cleared [${id}]`)
     proccesAction(id);
   });
 }
@@ -168,10 +187,23 @@ setTimeout(main, 1000);
 function proccesAction(id) {
 
   const current = config.feedback.find(field => field.id === id)
-  if (current.nextAction === 'send') {
+
+  if (id === 'send') {
+    if (current.hasOwnProperty('required')) {
+      for (let i = 0; i < current.required.length; i++) {
+        if (!inputs.hasOwnProperty(current.required[i])) {
+          console.log(`Missing [${current.required[i]}] - not sending data`)
+          return;
+        }
+      }
+    }
+    console.log('Required inputs present - sending data')
     sendInformation();
     return;
-  } 
+  }
+
+
+  console.log(`Current Action [${id}] - Next Action [${current.nextAction}]`);
 
   const next = config.feedback.find(field => field.id === current.nextAction)
   console.log('Checking Action', JSON.stringify(next))
@@ -179,24 +211,24 @@ function proccesAction(id) {
     console.log('No conditions met, going to next action')
     for (let i = 0; i < next.triggers.length; i++) {
       const [field, condition, value] = next.triggers[i];
-      console.log(field, condition, value)
+      //console.log(field, condition, value)
       switch (condition) {
         case '<':
-          console.log(field, condition, value, inputs[field] < value)
+          //console.log(field, condition, value, inputs[field] < value)
           if (inputs[field] < value) {
             startPrompt(next)
             return;
           }
           break;
         case '>':
-          console.log(field, condition, value, inputs[field] > value)
+          //console.log(field, condition, value, inputs[field] > value)
           if (inputs[field] > value) {
             startPrompt(next)
             return;
           }
           break;
         case '=':
-          console.log(field, condition, value, inputs[field] == value)
+          //console.log(field, condition, value, inputs[field] == value)
           if (inputs[field] == value) {
             startPrompt(next)
             return;
@@ -206,9 +238,16 @@ function proccesAction(id) {
     }
     console.log('No conditions met, going to next action')
     proccesAction(next.nextAction);
-  } else {
-    startPrompt(next);
+    return
   }
+
+  if (current.nextAction == 'send') {
+    proccesAction('send');
+    return;
+  }
+
+  startPrompt(next);
+
 }
 
 function startPrompt(next) {
@@ -260,7 +299,8 @@ async function sendInformation() {
   xapi.Command.HttpClient.Post(
     {
       AllowInsecureHTTPS: true,
-      Header: ["Content-Type: application/json"],
+      Header: ['Content-Type: application/json',
+        'Authorization: Bearer ' + config.token],
       ResultBody: "PlainText",
       Url: config.serviceUrl
     },
@@ -276,10 +316,10 @@ async function sendInformation() {
 }
 
 function getCallHistory() {
-  return xapi.Command.CallHistory.Get({Limit: 1, DetailLevel: 'Full'})
+  return xapi.Command.CallHistory.Get({ Limit: 1, DetailLevel: 'Full' })
     .then(result => {
       console.log('Call History: ', JSON.stringify(result))
-      if(!result.hasOwnProperty('Entry')) return null;
+      if (!result.hasOwnProperty('Entry')) return null;
       return result.Entry[0]
     });
 }
