@@ -5,7 +5,7 @@
 
 This is an example Webex Device macro which collected user feedback once a meeting has ended and can send the collected data to a backend server.
 
-![meetingFeedbackPrompt](https://github.com/wxsd-sales/postmeeting-feedback-macro/assets/21026209/bdb6d518-293c-4d9f-b0ba-fb5791bb6833)
+![PostMeetingFeedback](https://github.com/wxsd-sales/postmeeting-feedback-macro/assets/21026209/5d7091b1-4ce6-4ca3-ba4a-cdfe93d0f742)
 
 ## Overview
 
